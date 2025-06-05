@@ -290,7 +290,8 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
 def create_app():
     print("🚀 App carregado com sucesso!")
