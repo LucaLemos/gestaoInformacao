@@ -1,4 +1,5 @@
 import os
+import gdown
 import pandas as pd
 import geopandas as gpd
 import plotly.express as px
@@ -6,11 +7,22 @@ import plotly.graph_objects as go
 from dash import Dash, dcc, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
 
+# URL and output filename for the GeoJSON on Google Drive
+GEOJSON_URL = 'https://drive.google.com/uc?id=11jh8IdxdiMG1AffVKtmkeNSbA0FkEHFn'
+GEOJSON_FILE = 'censo_arboreo.geojson'
+
+# Download censo_arboreo.geojson if not already downloaded
+if not os.path.exists(GEOJSON_FILE):
+    print(f"Downloading {GEOJSON_FILE} from Google Drive...")
+    gdown.download(GEOJSON_URL, GEOJSON_FILE, quiet=False)
+else:
+    print(f"{GEOJSON_FILE} already exists. Using local copy.")
+
 # 🔹 Ler dados das árvores tombadas
 df = pd.read_csv('arvores-tombadas.csv', sep=';')
 
 # 🔹 Ler o GeoJSON do censo arbóreo
-gdf_censo = gpd.read_file('censo_arboreo.geojson')
+gdf_censo = gpd.read_file(GEOJSON_FILE)
 gdf_censo = gdf_censo.to_crs(epsg=4326)
 gdf_censo['longitude'] = gdf_censo.geometry.x
 gdf_censo['latitude'] = gdf_censo.geometry.y
@@ -54,8 +66,8 @@ choropleth_ucn_trace = go.Choroplethmapbox(
     marker_line_width=1.2,
     marker_line_color='rgba(10, 80, 10, 0.8)',
     visible=True,
-    legendgroup="conservation",  # Grupo para a legenda
-    showlegend=True  # Mostrar na legenda
+    legendgroup="conservation",
+    showlegend=True
 )
 
 # 🔸 Layout do mapa com configurações de legenda
@@ -82,8 +94,6 @@ initial_map_figure = go.Figure(
     data=[choropleth_ucn_trace],
     layout=map_layout
 )
-
-# Atualizar a legenda inicial
 initial_map_figure.update_layout(
     legend=dict(
         itemsizing='constant',
@@ -122,14 +132,12 @@ app.layout = html.Div(children=[
             html.H3("🗺️ Mapa Integrado: Árvores Tombadas, Censo Arbóreo e Áreas de Conservação"),
 
             html.Div([
-                # Botão para mostrar/ocultar áreas de conservação
                 html.Button(
                     'Mostrar/Ocultar Áreas de Conservação',
                     id='toggle-ucn-button',
                     style={'marginRight': '20px'}
                 ),
-                
-                # Botões para marcar/desmarcar todas espécies
+
                 html.Div([
                     html.Button(
                         'Marcar Todas',
@@ -142,7 +150,7 @@ app.layout = html.Div(children=[
                         style={'marginRight': '20px'}
                     ),
                 ]),
-                
+
                 dcc.Input(
                     id='filtro-nome-arvore',
                     type='text',
@@ -201,21 +209,21 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    
+
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    
+
     if trigger_id == 'toggle-ucn-button':
         current_figure['data'][0]['visible'] = not current_figure['data'][0]['visible']
         return current_figure, selected_species
-    
+
     if trigger_id == 'select-all-button':
         selected_species = [option['value'] for option in species_options]
     elif trigger_id == 'deselect-all-button':
         selected_species = []
-    
+
     ucn_visible = current_figure['data'][0]['visible']
     active_traces = []
-    
+
     # Sempre mostrar áreas de conservação (se visível)
     active_traces.append(go.Choroplethmapbox(
         geojson=gdf_ucn.__geo_interface__,
@@ -233,74 +241,54 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
         showlegend=True
     ))
 
-    # Só mostrar pontos se houver espécies selecionadas
+    # Filtro das árvores tombadas com base na pesquisa textual
+    df_filtered = df
+    if search_term and search_term.strip() != '':
+        df_filtered = df[df['nome_popular'].str.contains(search_term.strip(), case=False, na=False)]
+
+    # Filtrar pelo checklist de espécies selecionadas
     if selected_species:
-        df_tombadas_filtrado = df.copy()
-        gdf_censo_filtrado = gdf_censo.copy()
+        df_filtered = df_filtered[df_filtered['nome_popular'].isin(selected_species)]
 
-        if search_term and search_term.strip() != "":
-            st = search_term.strip().lower()
-            df_tombadas_filtrado = df_tombadas_filtrado[
-                df_tombadas_filtrado['nome_popular'].str.lower().str.contains(st, na=False)
-            ]
-            gdf_censo_filtrado = gdf_censo_filtrado[
-                gdf_censo_filtrado['nome_popul'].str.lower().str.contains(st, na=False)
-            ]
+    # Adicionar pontos das árvores tombadas ao mapa
+    if not df_filtered.empty:
+        active_traces.append(go.Scattermapbox(
+            lat=df_filtered['latitude'],
+            lon=df_filtered['longitude'],
+            mode='markers',
+            marker=dict(size=9, color='forestgreen'),
+            name="Árvores Tombadas",
+            text=df_filtered['nome_popular'],
+            hoverinfo='text',
+            legendgroup="tombadas",
+            showlegend=True
+        ))
 
-        df_tombadas_filtrado = df_tombadas_filtrado[
-            df_tombadas_filtrado['nome_popular'].isin(selected_species)
-        ]
-        gdf_censo_filtrado = gdf_censo_filtrado[
-            gdf_censo_filtrado['nome_popul'].isin(selected_species)
-        ]
+    # Filtrar censo arbóreo por espécies selecionadas (ou todas se nada selecionado)
+    gdf_filtered = gdf_censo
+    if selected_species:
+        mask = gdf_filtered['nome_popul'].isin(selected_species)
+        gdf_filtered = gdf_filtered[mask]
 
-        # Censo arbóreo só se tiver dados
-        if not gdf_censo_filtrado.empty:
-            active_traces.append(go.Scattermapbox(
-                lat=gdf_censo_filtrado['latitude'],
-                lon=gdf_censo_filtrado['longitude'],
-                mode='markers',
-                marker=dict(size=6, color='royalblue', opacity=0.7),
-                text=gdf_censo_filtrado['nome_popul'],
-                name='Censo Arbóreo',
-                hoverinfo='text',
-                legendgroup="trees",
-                showlegend=True
-            ))
+    # Adicionar pontos do censo arbóreo
+    if not gdf_filtered.empty:
+        active_traces.append(go.Scattermapbox(
+            lat=gdf_filtered['latitude'],
+            lon=gdf_filtered['longitude'],
+            mode='markers',
+            marker=dict(size=6, color='orange'),
+            name="Censo Arbóreo",
+            text=gdf_filtered['nome_popul'],
+            hoverinfo='text',
+            legendgroup="censo",
+            showlegend=True
+        ))
 
-        # Árvores tombadas só se tiver dados
-        if not df_tombadas_filtrado.empty:
-            active_traces.append(go.Scattermapbox(
-                lat=df_tombadas_filtrado['latitude'],
-                lon=df_tombadas_filtrado['longitude'],
-                mode='markers',
-                marker=dict(size=10, color='darkorange', opacity=0.9),
-                text=df_tombadas_filtrado['nome_popular'],
-                name='Árvores Tombadas',
-                hoverinfo='text',
-                legendgroup="trees",
-                showlegend=True
-            ))
+    # Atualizar layout do mapa
+    current_figure['data'] = active_traces
 
-    fig = go.Figure(data=active_traces, layout=map_layout)
-    fig.update_layout(
-        mapbox_center={"lat": -8.05, "lon": -34.9},
-        mapbox_zoom=11,
-        legend=dict(
-            title="Legenda:",
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01,
-            bgcolor='rgba(255, 255, 255, 0.7)',
-            font=dict(size=12),
-            itemsizing='constant'
-        )
-    )
+    return current_figure, selected_species
 
-    return fig, selected_species
 
-# 🔸 Rodar localmente
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))  # For Render/Railway
-    app.run(host="0.0.0.0", port=port, debug=False) 
+    app.run(debug=True)
