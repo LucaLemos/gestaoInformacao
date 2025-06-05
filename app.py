@@ -5,54 +5,56 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import Dash, dcc, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
+import flask
 
-# 🔹 Ler dados das árvores tombadas
-df = pd.read_csv('arvores-tombadas.csv', sep=';')
+# Initialize Flask server and Dash app
+server = flask.Flask(__name__)
+app = Dash(__name__, server=server)
 
-# 🔹 Read the 4 parts of the tree census
-censo_dir = "censo-partes"
+# Configure file paths
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Load tree data
+df = pd.read_csv(os.path.join(BASE_DIR, 'arvores-tombadas.csv'), sep=';')
+
+# Load tree census data
+censo_dir = os.path.join(BASE_DIR, "censo-partes")
 censo_files = [f for f in os.listdir(censo_dir) if f.endswith(".geojson")]
 censo_paths = sorted([os.path.join(censo_dir, f) for f in censo_files])
 
-# Read each file and ensure unique IDs
 gdf_list = []
 for i, path in enumerate(censo_paths):
     gdf = gpd.read_file(path)
     
-    # Add a unique prefix to IDs based on file index to ensure uniqueness
     if 'id' in gdf.columns:
         gdf['id'] = f"{i}_" + gdf['id'].astype(str)
     elif 'ID' in gdf.columns:
         gdf['ID'] = f"{i}_" + gdf['ID'].astype(str)
-    # If no ID column exists, create one with unique values
     else:
         gdf['id'] = [f"{i}_{x}" for x in range(len(gdf))]
     
-    # Drop completely empty columns
     gdf = gdf.dropna(axis=1, how='all')
     
     if not gdf.empty:
         gdf_list.append(gdf)
 
-# Concatenate only if we have DataFrames to concatenate
 if gdf_list:
     gdf_censo = pd.concat(gdf_list, ignore_index=True)
     gdf_censo = gdf_censo.to_crs(epsg=4326)
     gdf_censo["longitude"] = gdf_censo.geometry.x
     gdf_censo["latitude"] = gdf_censo.geometry.y
 else:
-    # Create empty GeoDataFrame with expected structure if no data was found
     gdf_censo = gpd.GeoDataFrame(columns=['nome_popul', 'geometry'], geometry='geometry')
     gdf_censo = gdf_censo.to_crs(epsg=4326)
     gdf_censo["longitude"] = []
     gdf_censo["latitude"] = []
 
-# 🔹 Ler GeoJSON das Unidades de Conservação
-gdf_ucn = gpd.read_file('unidadesconservacaonatureza-ucn.geojson')
+# Load conservation units
+gdf_ucn = gpd.read_file(os.path.join(BASE_DIR, 'unidadesconservacaonatureza-ucn.geojson'))
 gdf_ucn = gdf_ucn.to_crs(epsg=4326)
 gdf_ucn['geometry'] = gdf_ucn['geometry'].simplify(0.001)
 
-# 🔸 Obter lista única de espécies
+# Process species data
 especies_tombadas = df['nome_popular'].dropna().unique().tolist()
 especies_censo = gdf_censo['nome_popul'].dropna().unique().tolist()
 
@@ -71,7 +73,7 @@ for especie in lista_especies:
     label = f"{especie} 🌳" if is_tombada else especie
     especies_options.append({'label': label, 'value': especie})
 
-# 🔸 Traço das Áreas de Conservação
+# Map configuration
 choropleth_ucn_trace = go.Choroplethmapbox(
     geojson=gdf_ucn.__geo_interface__,
     locations=gdf_ucn.index,
@@ -88,7 +90,6 @@ choropleth_ucn_trace = go.Choroplethmapbox(
     showlegend=True
 )
 
-# 🔸 Layout do mapa
 map_layout = go.Layout(
     mapbox_style="open-street-map",
     mapbox_zoom=11,
@@ -107,13 +108,12 @@ map_layout = go.Layout(
     hovermode='closest'
 )
 
-# 🔸 Figura inicial
 initial_map_figure = go.Figure(
     data=[choropleth_ucn_trace],
     layout=map_layout
 )
 
-# 🔸 Gráfico de barras
+# Charts
 species_counts = df['nome_popular'].value_counts().reset_index()
 species_counts.columns = ['nome_popular', 'count']
 barras = px.bar(
@@ -124,7 +124,6 @@ barras = px.bar(
     title="📊 Espécies Mais Frequentes"
 )
 
-# 🔸 Gráfico de pizza
 pizza = px.pie(
     df,
     names='familia',
@@ -132,17 +131,12 @@ pizza = px.pie(
     hole=0.4
 )
 
-# 🔸 Iniciar o app
-app = Dash(__name__)
-server = app.server
-
+# App layout
 app.layout = html.Div(children=[
     html.Header("🌳 Dashboard de Arborização Urbana - Recife", className="header"),
-
     html.Div([
         html.Div([
             html.H3("🗺️ Mapa Integrado: Árvores Tombadas, Censo Arbóreo e Áreas de Conservação"),
-
             html.Div([
                 html.Button('Mostrar/Ocultar Áreas de Conservação', id='toggle-ucn-button', style={'marginRight': '20px'}),
                 html.Button('Marcar Todas', id='select-all-button', style={'marginRight': '10px'}),
@@ -155,10 +149,8 @@ app.layout = html.Div(children=[
                     style={'width': '300px'}
                 )
             ], style={'display': 'flex', 'alignItems': 'center', 'marginBottom': '10px', 'marginLeft': '10px'}),
-
             dcc.Graph(id='mapa-integrado-graph', figure=initial_map_figure)
         ], className="card", style={'width': '75%', 'padding': '10px'}),
-
         html.Div([
             html.H4("🌳 Filtrar por Espécies"),
             dcc.Checklist(
@@ -170,23 +162,20 @@ app.layout = html.Div(children=[
             )
         ], className="card", style={'width': '25%', 'padding': '10px'}),
     ], style={'display': 'flex'}),
-
     html.Div([
         html.Div([
             html.H3("📊 Espécies Mais Frequentes"),
             dcc.Graph(figure=barras)
         ], className="card"),
-
         html.Div([
             html.H3("🧬 Distribuição por Família"),
             dcc.Graph(figure=pizza)
         ], className="card")
     ], className="content"),
-
     html.Footer("© 2025 - Desenvolvido por Seu Nome • Dados: Prefeitura do Recife", className="footer")
 ])
 
-# 🔸 Callback do mapa
+# Callbacks
 @app.callback(
     Output('mapa-integrado-graph', 'figure'),
     Output('filtro-especie', 'value'),
@@ -219,7 +208,6 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
     ucn_visible = current_figure['data'][0]['visible']
     active_traces = []
 
-    # Áreas de conservação
     active_traces.append(go.Choroplethmapbox(
         geojson=gdf_ucn.__geo_interface__,
         locations=gdf_ucn.index,
@@ -299,5 +287,8 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
 
     return new_fig, selected_species
 
+def create_app():
+    return server
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=8050) 
