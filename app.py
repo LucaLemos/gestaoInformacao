@@ -5,11 +5,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 from dash import Dash, dcc, html, Input, Output, State, callback_context
 from dash.exceptions import PreventUpdate
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
 import flask
 
 # Initialize Flask server and Dash app
 server = flask.Flask(__name__)
-app = Dash(__name__, server=server)
+app = Dash(__name__, server=server, url_base_pathname='/')
 
 # Configure file paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -287,8 +288,10 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
 
     return new_fig, selected_species
 
-def create_app():
-    return server
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
+
+def create_app():
+    print("🚀 App carregado com sucesso!")
+    return server
