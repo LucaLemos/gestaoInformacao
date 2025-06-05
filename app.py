@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import geopandas as gpd
 import plotly.express as px
@@ -9,7 +10,7 @@ from dash.exceptions import PreventUpdate
 df = pd.read_csv('arvores-tombadas.csv', sep=';')
 
 # 🔹 Ler o GeoJSON do censo arbóreo
-gdf_censo = gpd.read_file('censo_arboreo.geojson')
+gdf_censo = gpd.read_file('https://drive.google.com/file/d/1z8mbSLPRBWpBfnFG2bE8JjK5rtqdn2MP/view?usp=sharing')
 gdf_censo = gdf_censo.to_crs(epsg=4326)
 gdf_censo['longitude'] = gdf_censo.geometry.x
 gdf_censo['latitude'] = gdf_censo.geometry.y
