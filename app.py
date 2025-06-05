@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import geopandas as gpd
 import plotly.express as px
@@ -301,4 +302,5 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
 
 # 🔸 Rodar localmente
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 8050))  # For Render/Railway
+    app.run(host="0.0.0.0", port=port, debug=True)
