@@ -9,8 +9,8 @@ from werkzeug.middleware.dispatcher import DispatcherMiddleware
 import flask
 
 # Initialize Flask server and Dash app
-server = flask.Flask(__name__)
-app = Dash(__name__, server=server, url_base_pathname='/')
+app = Dash(__name__)
+server = app.server
 
 # Configure file paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
