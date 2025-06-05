@@ -300,4 +300,4 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
     return new_fig, selected_species
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8050)))
