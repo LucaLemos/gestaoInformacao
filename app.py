@@ -10,7 +10,7 @@ from dash.exceptions import PreventUpdate
 df = pd.read_csv('arvores-tombadas.csv', sep=';')
 
 # 🔹 Ler as 4 partes do censo arbóreo
-censo_dir = "censo_partes"
+censo_dir = "censo-partes"
 censo_files = [f for f in os.listdir(censo_dir) if f.endswith(".geojson")]
 censo_paths = sorted([os.path.join(censo_dir, f) for f in censo_files])  # garante a ordem
 
