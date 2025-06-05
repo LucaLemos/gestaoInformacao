@@ -9,27 +9,53 @@ from dash.exceptions import PreventUpdate
 # 🔹 Ler dados das árvores tombadas
 df = pd.read_csv('arvores-tombadas.csv', sep=';')
 
-# 🔹 Ler as 4 partes do censo arbóreo
+# 🔹 Read the 4 parts of the tree census
 censo_dir = "censo-partes"
 censo_files = [f for f in os.listdir(censo_dir) if f.endswith(".geojson")]
-censo_paths = sorted([os.path.join(censo_dir, f) for f in censo_files])  # garante a ordem
+censo_paths = sorted([os.path.join(censo_dir, f) for f in censo_files])
 
-gdf_list = [gpd.read_file(path) for path in censo_paths]
-gdf_censo = pd.concat(gdf_list, ignore_index=True)
-gdf_censo = gdf_censo.to_crs(epsg=4326)
-gdf_censo["longitude"] = gdf_censo.geometry.x
-gdf_censo["latitude"] = gdf_censo.geometry.y
+# Read each file and ensure unique IDs
+gdf_list = []
+for i, path in enumerate(censo_paths):
+    gdf = gpd.read_file(path)
+    
+    # Add a unique prefix to IDs based on file index to ensure uniqueness
+    if 'id' in gdf.columns:
+        gdf['id'] = f"{i}_" + gdf['id'].astype(str)
+    elif 'ID' in gdf.columns:
+        gdf['ID'] = f"{i}_" + gdf['ID'].astype(str)
+    # If no ID column exists, create one with unique values
+    else:
+        gdf['id'] = [f"{i}_{x}" for x in range(len(gdf))]
+    
+    # Drop completely empty columns
+    gdf = gdf.dropna(axis=1, how='all')
+    
+    if not gdf.empty:
+        gdf_list.append(gdf)
 
-# 🔹 Ler o GeoJSON das Unidades de Conservação da Natureza
+# Concatenate only if we have DataFrames to concatenate
+if gdf_list:
+    gdf_censo = pd.concat(gdf_list, ignore_index=True)
+    gdf_censo = gdf_censo.to_crs(epsg=4326)
+    gdf_censo["longitude"] = gdf_censo.geometry.x
+    gdf_censo["latitude"] = gdf_censo.geometry.y
+else:
+    # Create empty GeoDataFrame with expected structure if no data was found
+    gdf_censo = gpd.GeoDataFrame(columns=['nome_popul', 'geometry'], geometry='geometry')
+    gdf_censo = gdf_censo.to_crs(epsg=4326)
+    gdf_censo["longitude"] = []
+    gdf_censo["latitude"] = []
+
+# 🔹 Ler GeoJSON das Unidades de Conservação
 gdf_ucn = gpd.read_file('unidadesconservacaonatureza-ucn.geojson')
 gdf_ucn = gdf_ucn.to_crs(epsg=4326)
 gdf_ucn['geometry'] = gdf_ucn['geometry'].simplify(0.001)
 
-# 🔸 Obter lista única de espécies (sem duplicatas e marcando as tombadas)
+# 🔸 Obter lista única de espécies
 especies_tombadas = df['nome_popular'].dropna().unique().tolist()
 especies_censo = gdf_censo['nome_popul'].dropna().unique().tolist()
 
-# Criar lista única sem duplicatas (case insensitive)
 unique_species = set()
 species_list = []
 for especie in especies_tombadas + especies_censo:
@@ -38,7 +64,6 @@ for especie in especies_tombadas + especies_censo:
         unique_species.add(lower_especie)
         species_list.append(especie)
 
-# Marcar espécies tombadas
 lista_especies = sorted(species_list, key=lambda x: x.lower())
 especies_options = []
 for especie in lista_especies:
@@ -50,7 +75,7 @@ for especie in lista_especies:
 choropleth_ucn_trace = go.Choroplethmapbox(
     geojson=gdf_ucn.__geo_interface__,
     locations=gdf_ucn.index,
-    z=[1]*len(gdf_ucn),
+    z=[1] * len(gdf_ucn),
     colorscale=[[0, 'rgba(34, 139, 34, 0.15)'], [1, 'rgba(34, 139, 34, 0.15)']],
     showscale=False,
     name="Áreas de Conservação",
@@ -59,17 +84,17 @@ choropleth_ucn_trace = go.Choroplethmapbox(
     marker_line_width=1.2,
     marker_line_color='rgba(10, 80, 10, 0.8)',
     visible=True,
-    legendgroup="conservation",  # Grupo para a legenda
-    showlegend=True  # Mostrar na legenda
+    legendgroup="conservation",
+    showlegend=True
 )
 
-# 🔸 Layout do mapa com configurações de legenda
+# 🔸 Layout do mapa
 map_layout = go.Layout(
     mapbox_style="open-street-map",
     mapbox_zoom=11,
     mapbox_center={"lat": -8.05, "lon": -34.9},
     height=700,
-    margin={"r":0, "t":0, "l":0, "b":0},
+    margin={"r": 0, "t": 0, "l": 0, "b": 0},
     legend=dict(
         title="Legenda:",
         yanchor="top",
@@ -82,18 +107,10 @@ map_layout = go.Layout(
     hovermode='closest'
 )
 
-# 🔸 Figura inicial do mapa (apenas com áreas de conservação)
+# 🔸 Figura inicial
 initial_map_figure = go.Figure(
     data=[choropleth_ucn_trace],
     layout=map_layout
-)
-
-# Atualizar a legenda inicial
-initial_map_figure.update_layout(
-    legend=dict(
-        itemsizing='constant',
-        traceorder='normal'
-    )
 )
 
 # 🔸 Gráfico de barras
@@ -127,27 +144,9 @@ app.layout = html.Div(children=[
             html.H3("🗺️ Mapa Integrado: Árvores Tombadas, Censo Arbóreo e Áreas de Conservação"),
 
             html.Div([
-                # Botão para mostrar/ocultar áreas de conservação
-                html.Button(
-                    'Mostrar/Ocultar Áreas de Conservação',
-                    id='toggle-ucn-button',
-                    style={'marginRight': '20px'}
-                ),
-                
-                # Botões para marcar/desmarcar todas espécies
-                html.Div([
-                    html.Button(
-                        'Marcar Todas',
-                        id='select-all-button',
-                        style={'marginRight': '10px'}
-                    ),
-                    html.Button(
-                        'Desmarcar Todas',
-                        id='deselect-all-button',
-                        style={'marginRight': '20px'}
-                    ),
-                ]),
-                
+                html.Button('Mostrar/Ocultar Áreas de Conservação', id='toggle-ucn-button', style={'marginRight': '20px'}),
+                html.Button('Marcar Todas', id='select-all-button', style={'marginRight': '10px'}),
+                html.Button('Desmarcar Todas', id='deselect-all-button', style={'marginRight': '20px'}),
                 dcc.Input(
                     id='filtro-nome-arvore',
                     type='text',
@@ -170,7 +169,6 @@ app.layout = html.Div(children=[
                 style={'height': '700px', 'overflowY': 'auto'}
             )
         ], className="card", style={'width': '25%', 'padding': '10px'}),
-
     ], style={'display': 'flex'}),
 
     html.Div([
@@ -188,7 +186,7 @@ app.layout = html.Div(children=[
     html.Footer("© 2025 - Desenvolvido por Seu Nome • Dados: Prefeitura do Recife", className="footer")
 ])
 
-# 🔸 Callback para atualizar o mapa
+# 🔸 Callback do mapa
 @app.callback(
     Output('mapa-integrado-graph', 'figure'),
     Output('filtro-especie', 'value'),
@@ -206,26 +204,26 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    
+
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    
+
     if trigger_id == 'toggle-ucn-button':
         current_figure['data'][0]['visible'] = not current_figure['data'][0]['visible']
         return current_figure, selected_species
-    
+
     if trigger_id == 'select-all-button':
         selected_species = [option['value'] for option in species_options]
     elif trigger_id == 'deselect-all-button':
         selected_species = []
-    
+
     ucn_visible = current_figure['data'][0]['visible']
     active_traces = []
-    
-    # Sempre mostrar áreas de conservação (se visível)
+
+    # Áreas de conservação
     active_traces.append(go.Choroplethmapbox(
         geojson=gdf_ucn.__geo_interface__,
         locations=gdf_ucn.index,
-        z=[1]*len(gdf_ucn),
+        z=[1] * len(gdf_ucn),
         colorscale=[[0, 'rgba(34, 139, 34, 0.15)'], [1, 'rgba(34, 139, 34, 0.15)']],
         showscale=False,
         name="Áreas de Conservação",
@@ -238,7 +236,6 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
         showlegend=True
     ))
 
-    # Só mostrar pontos se houver espécies selecionadas
     if selected_species:
         df_tombadas_filtrado = df.copy()
         gdf_censo_filtrado = gdf_censo.copy()
@@ -259,52 +256,48 @@ def update_mapa_camadas(search_term, selected_species, ucn_clicks, select_all, d
             gdf_censo_filtrado['nome_popul'].isin(selected_species)
         ]
 
-        # Censo arbóreo só se tiver dados
         if not gdf_censo_filtrado.empty:
             active_traces.append(go.Scattermapbox(
                 lat=gdf_censo_filtrado['latitude'],
                 lon=gdf_censo_filtrado['longitude'],
                 mode='markers',
-                marker=dict(size=6, color='royalblue', opacity=0.7),
+                marker=go.scattermapbox.Marker(
+                    size=7,
+                    color='blue'
+                ),
+                name="Censo Arbóreo",
                 text=gdf_censo_filtrado['nome_popul'],
-                name='Censo Arbóreo',
                 hoverinfo='text',
-                legendgroup="trees",
-                showlegend=True
+                legendgroup="censo"
             ))
 
-        # Árvores tombadas só se tiver dados
         if not df_tombadas_filtrado.empty:
             active_traces.append(go.Scattermapbox(
                 lat=df_tombadas_filtrado['latitude'],
                 lon=df_tombadas_filtrado['longitude'],
                 mode='markers',
-                marker=dict(size=10, color='darkorange', opacity=0.9),
+                marker=go.scattermapbox.Marker(
+                    size=9,
+                    color='darkgreen'
+                ),
+                name="Árvores Tombadas",
                 text=df_tombadas_filtrado['nome_popular'],
-                name='Árvores Tombadas',
                 hoverinfo='text',
-                legendgroup="trees",
-                showlegend=True
+                legendgroup="tombadas"
             ))
 
-    fig = go.Figure(data=active_traces, layout=map_layout)
-    fig.update_layout(
-        mapbox_center={"lat": -8.05, "lon": -34.9},
-        mapbox_zoom=11,
+    new_fig = go.Figure(
+        data=active_traces,
+        layout=map_layout
+    )
+    new_fig.update_layout(
         legend=dict(
-            title="Legenda:",
-            yanchor="top",
-            y=0.99,
-            xanchor="left",
-            x=0.01,
-            bgcolor='rgba(255, 255, 255, 0.7)',
-            font=dict(size=12),
-            itemsizing='constant'
+            itemsizing='constant',
+            traceorder='normal'
         )
     )
 
-    return fig, selected_species
+    return new_fig, selected_species
 
-# 🔸 Rodar localmente
 if __name__ == '__main__':
     app.run(debug=True)
