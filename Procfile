@@ -1,1 +1,1 @@
-web: gunicorn app:server --workers 1 --timeout 120 --bind 0.0.0.0:$PORT
+web: waitress-serve --port=$PORT --call app:create_app
