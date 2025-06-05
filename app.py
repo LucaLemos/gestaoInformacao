@@ -128,7 +128,7 @@ pizza = px.pie(
 )
 
 # 🔹 App Layout
-app.layout = html.Div([
+app.layout = html.Div(children=[
     html.Header("🌳 Dashboard de Arborização Urbana - Recife", className="header"),
     html.Div([
         html.Div([
@@ -256,5 +256,5 @@ def update_mapa(search_term, selected_species, ucn_clicks, select_all, deselect_
 
 # 🔹 Run server (like app.listen() in Express)
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8050))
-    app.run(host='0.0.0.0', port=port)
+    port = int(os.environ.get('PORT', 8050))  # Default to 8050 locally
+    app.run(host='0.0.0.0', port=port, debug=False)
