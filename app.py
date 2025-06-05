@@ -9,11 +9,16 @@ from dash.exceptions import PreventUpdate
 # 🔹 Ler dados das árvores tombadas
 df = pd.read_csv('arvores-tombadas.csv', sep=';')
 
-# 🔹 Ler o GeoJSON do censo arbóreo
-gdf_censo = gpd.read_file('https://drive.google.com/file/d/1z8mbSLPRBWpBfnFG2bE8JjK5rtqdn2MP/view?usp=sharing')
+# 🔹 Ler as 4 partes do censo arbóreo
+censo_dir = "censo_partes"
+censo_files = [f for f in os.listdir(censo_dir) if f.endswith(".geojson")]
+censo_paths = sorted([os.path.join(censo_dir, f) for f in censo_files])  # garante a ordem
+
+gdf_list = [gpd.read_file(path) for path in censo_paths]
+gdf_censo = pd.concat(gdf_list, ignore_index=True)
 gdf_censo = gdf_censo.to_crs(epsg=4326)
-gdf_censo['longitude'] = gdf_censo.geometry.x
-gdf_censo['latitude'] = gdf_censo.geometry.y
+gdf_censo["longitude"] = gdf_censo.geometry.x
+gdf_censo["latitude"] = gdf_censo.geometry.y
 
 # 🔹 Ler o GeoJSON das Unidades de Conservação da Natureza
 gdf_ucn = gpd.read_file('unidadesconservacaonatureza-ucn.geojson')
